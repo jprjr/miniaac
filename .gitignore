@@ -1,0 +1,13 @@
+*.o
+*.a
+*.so
+*.exe
+/dist/
+/.build/
+/demos/decode-raw
+/demos/decode-adts
+/scripts/generate-bitreverse-tables
+/scripts/generate-imdct-twiddles
+/scripts/generate-quant-tables
+/scripts/generate-tns-tables
+/scripts/generate-windows

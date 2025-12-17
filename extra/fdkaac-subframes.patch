@@ -1,0 +1,106 @@
+SPDX-License-Identifier: 0BSD
+
+This is a patch to fdkaac 1.0.6, that adds the ability to set a number
+of raw data blocks within a single ADTS packet. This is not a common
+feature - I doubt there's any cases of encoders using more than 1 raw
+data block within an ADTS frame in the wild.
+
+Copyright 2025 John Regan <john@jrjrtech.com>
+
+Permission to use, copy, modify, and/or distribute this software for any
+purpose with or without fee is hereby granted.
+
+THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES WITH
+REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF MERCHANTABILITY AND
+FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY SPECIAL, DIRECT,
+INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES WHATSOEVER RESULTING FROM
+LOSS OF USE, DATA OR PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR
+OTHER TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR
+PERFORMANCE OF THIS SOFTWARE.
+---
+ src/aacenc.c |  5 +++++
+ src/aacenc.h |  3 ++-
+ src/main.c   | 14 +++++++++++++-
+ 3 files changed, 20 insertions(+), 2 deletions(-)
+
+diff --git a/src/aacenc.c b/src/aacenc.c
+index 8404f31..00a9bff 100644
+--- a/src/aacenc.c
++++ b/src/aacenc.c
+@@ -219,6 +219,11 @@ int aacenc_init(HANDLE_AACENCODER *encoder, const aacenc_param_t *params,
+         fprintf(stderr, "ERROR: unsupported transport format\n");
+         goto FAIL;
+     }
++    if (aacEncoder_SetParam(*encoder, AACENC_TPSUBFRAMES,
++                            params->rawdatablocks) != AACENC_OK) {
++        fprintf(stderr, "ERROR: unsupported raw-data-blocks value\n");
++        goto FAIL;
++    }
+     if (aacEncoder_SetParam(*encoder, AACENC_SIGNALING_MODE,
+                             params->sbr_signaling) != AACENC_OK) {
+         fprintf(stderr, "ERROR: failed to set SBR signaling mode\n");
+diff --git a/src/aacenc.h b/src/aacenc.h
+index ebbe98a..2c2b61c 100644
+--- a/src/aacenc.h
++++ b/src/aacenc.h
+@@ -19,7 +19,8 @@
+     unsigned sbr_signaling; \
+     unsigned transport_format; \
+     unsigned adts_crc_check; \
+-    unsigned header_period;
++    unsigned header_period; \
++    unsigned rawdatablocks;
+ 
+ typedef struct aacenc_param_t {
+     AACENC_PARAMS
+diff --git a/src/main.c b/src/main.c
+index c4d0c5f..9e91e73 100644
+--- a/src/main.c
++++ b/src/main.c
+@@ -143,6 +143,9 @@ PROGNAME " %s\n"
+ "                                 6: LATM MCP=1\n"
+ "                                 7: LATM MCP=0\n"
+ "                                10: LOAS/LATM (LATM within LOAS)\n"
++" -r, --raw-data-blocks <n>     Raw data blocks in a single transport frame\n"
++"                                 ADTS: max of 4\n"
++"                                 LOAS/LATM: max of 2\n"
+ " -C, --adts-crc-check          Add CRC protection on ADTS header\n"
+ " -h, --header-period <n>       StreamMuxConfig/PCE repetition period in\n"
+ "                               transport layer\n"
+@@ -256,6 +259,7 @@ int parse_options(int argc, char **argv, aacenc_param_ex_t *params)
+         { "lowdelay-sbr",     required_argument, 0, 'L' },
+         { "sbr-ratio",        required_argument, 0, 's' },
+         { "transport-format", required_argument, 0, 'f' },
++        { "raw-data-blocks",  required_argument, 0, 'r' },
+         { "adts-crc-check",   no_argument,       0, 'C' },
+         { "header-period",    required_argument, 0, 'P' },
+ 
+@@ -291,9 +295,10 @@ int parse_options(int argc, char **argv, aacenc_param_ex_t *params)
+         { 0,                  0,                 0, 0                      },
+     };
+     params->afterburner = 1;
++    params->rawdatablocks = 1;
+ 
+     aacenc_getmainargs(&argc, &argv);
+-    while ((ch = getopt_long(argc, argv, "hp:b:m:w:a:L:s:f:CP:G:Io:SR",
++    while ((ch = getopt_long(argc, argv, "hp:b:m:w:a:L:s:f:CP:G:Io:SRr:",
+                              long_options, 0)) != EOF) {
+         switch (ch) {
+         case 'h':
+@@ -463,6 +468,13 @@ int parse_options(int argc, char **argv, aacenc_param_ex_t *params)
+         case '#':
+             params->no_timestamp = 1;
+             break;
++        case 'r':
++            if (sscanf(optarg, "%u", &n) != 1) {
++                fprintf(stderr, "invalid arg for raw-data-blocks\n");
++                return -1;
++            }
++            params->rawdatablocks = n;
++            break;
+         default:
+             return usage(), -1;
+         }
+-- 
+2.39.5
+
