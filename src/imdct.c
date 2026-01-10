@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: 0BSD */
 #include "imdct.h"
 
 #include "imdct_twiddle_factors.h"

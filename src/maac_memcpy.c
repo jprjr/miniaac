@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: 0BSD */
 #include "maac_memcpy.h"
 
 #ifdef MAAC_NO_STDSTRING

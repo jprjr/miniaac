@@ -1,8 +1,7 @@
+/* SPDX-License-Identifier: 0BSD */
 #include "maac_rand.h"
 
-/*  static maac_u32 maac_random_seed = MAAC_U32_C(0xbabab0ee); */
-/* static maac_u32 maac_random_seed = MAAC_U32_C(0x1F2E3D4C); */
-static maac_u32 maac_random_seed = MAAC_U32_C(0);
+static maac_u32 maac_random_seed = MAAC_U32_C(0xbabab0ee);
 
 MAAC_PUBLIC
 void

@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: 0BSD */
 #include "sce_extras.h"
 
 #include "maac_align.h"

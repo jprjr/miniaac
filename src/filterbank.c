@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: 0BSD */
 #include "filterbank.h"
 
 #include "maac_memcpy.h"
