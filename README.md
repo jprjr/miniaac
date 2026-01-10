@@ -3,6 +3,12 @@
 A single-file, no allocation AAC decoder, written in c89, also compatible
 with C++ because I'm a masochist.
 
+The `src` folder in the repo contains all the separate header and code files,
+but if you run `make dist` that will produce a `dist` folder with a single-file
+version.
+
+I'll also post single-file builds as releases.
+
 You can build it in a completely standalone manner and not rely on the C
 library at all!
 
