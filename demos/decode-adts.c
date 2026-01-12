@@ -1,4 +1,8 @@
 /* SPDX-License-Identifier: 0BSD */
+
+/* Example program for decoding via maac_adts,
+using just the maac_adts_decode() function */
+
 #include "maac.h"
 #include "maac_extras.h"
 
@@ -10,6 +14,8 @@
 
 #include "pack.h"
 #include "wav.h"
+#include "buffer_samples.h"
+#include "channel.h"
 
 #ifdef __cplusplus
 #include <cstdlib>
@@ -21,6 +27,7 @@
 #include <string.h>
 #endif
 
+static int SLURPFILE = 0;
 static int DECODEONLY = 0;
 static const maac_u32 bitdepth = MAAC_U32_C(16);
 
@@ -30,7 +37,8 @@ struct decoder {
     maac_u32 channels;
     maac_channel* ch;
 
-    maac_u8 buf[1]; /* out single-byte data buffer */
+    maac_u8 *buf; /* our data buffer */
+
     maac_u8 *outbuf; /* our output buffer of packed samples */
 
     maac_adts adts;
@@ -48,32 +56,19 @@ static void decoder_init(decoder* d) {
     d->frames = 0;
     maac_adts_init(&d->adts);
     maac_bitreader_init(&d->br);
-
-    d->br.data = d->buf;
 }
 
 static void decoder_close(decoder* d) {
     if(d->in != NULL) fclose(d->in);
     if(d->out != NULL) fclose(d->out);
     if(d->ch != NULL) free(d->ch);
+    if(d->buf != NULL) free(d->buf);
     if(d->outbuf != NULL) free(d->outbuf);
     free(d);
 }
 
 static void decoder_write_samples(decoder* d) {
-    maac_u32 c;
-    maac_u32 i;
-    maac_s32 s;
-    maac_flt *f;
-    for(c=0;c<d->channels;c++) {
-        f = maac_channel_samples(&d->ch[c]);
-        for(i=0;i<d->ch[c].n_samples;i++) {
-            s = (maac_s32)f[i];
-            s = maac_clamp(s, MAAC_S16_MIN, MAAC_S16_MAX);
-            pack_s16le(&d->outbuf[ ((i * d->channels) * 2) + (c*2)], (maac_s16)s);
-        }
-    }
-    fwrite(d->outbuf, 1, d->channels * 2 * d->ch[0].n_samples, d->out);
+    fwrite(d->outbuf, 1, buffer_samples(d->ch, maac_adts_channel_configuration(&d->adts), d->channels, d->outbuf) , d->out);
     return;
 }
 
@@ -81,6 +76,7 @@ static int decode_file(const char* infile, const char* outfile) {
     MAAC_RESULT res;
     int r = 1;
     decoder *d = NULL;
+    long l;
 
     d = (decoder*)malloc(sizeof(decoder));
     if(d == NULL) {
@@ -93,6 +89,42 @@ static int decode_file(const char* infile, const char* outfile) {
     if(d->in == NULL) {
         fprintf(stderr,"failed to open %s for reading\n", infile);
         goto cleanup;
+    }
+
+    if(SLURPFILE) {
+        if(fseek(d->in, 0, SEEK_END) != 0) {
+            fprintf(stderr,"error seeking to end of file\n");
+            goto cleanup;
+        }
+        if( (l = ftell(d->in)) <= 0) {
+            fprintf(stderr,"error getting lenfth of file\n");
+            goto cleanup;
+        }
+        if(fseek(d->in, 0, SEEK_SET) != 0) {
+            fprintf(stderr,"error seeking to start of file\n");
+            goto cleanup;
+        }
+        d->buf = (maac_u8*)malloc((size_t)l);
+        if(d->buf == NULL) {
+            fprintf(stderr,"error allocating file buffer\n");
+            goto cleanup;
+        }
+        if(fread(d->buf,1,(size_t)l,d->in) != (size_t)l) {
+            fprintf(stderr,"error reading full file\n");
+            goto cleanup;
+        }
+        d->br.data = d->buf;
+        d->br.len = (maac_u32)l;
+        d->br.pos = 0;
+    } else {
+        d->buf = (maac_u8*)malloc(sizeof(maac_u8));
+        if(d->buf == NULL) {
+            fprintf(stderr,"error allocating file buffer\n");
+            goto cleanup;
+        }
+        d->br.data = d->buf;
+        d->br.len = 1;
+        d->br.pos = 1;
     }
 
     while( (res = maac_adts_sync(&d->adts, &d->br)) == MAAC_CONTINUE) {
@@ -124,7 +156,7 @@ static int decode_file(const char* infile, const char* outfile) {
             goto cleanup;
         }
 
-        if(wav_header_create(d->out, maac_adts_sample_rate(&d->adts), d->channels, bitdepth) != 0) {
+        if(wav_header_create(d->out, maac_adts_sample_rate(&d->adts), d->channels, channel_mask(maac_adts_channel_configuration(&d->adts)), bitdepth) != 0) {
             fprintf(stderr,"error writing out WAV header\n");
             goto cleanup;
         }
@@ -133,10 +165,7 @@ static int decode_file(const char* infile, const char* outfile) {
         maac_adts_set_num_out_channels(&d->adts, d->channels);
     }
 
-    while(fread(d->buf,1,1,d->in) == 1) {
-        d->br.pos = 0;
-        d->br.len = 1;
-
+    do {
         while( (res = maac_adts_decode(&d->adts, &d->br)) == MAAC_CONTINUE) {
             if(fread(d->buf,1,1,d->in) != 1) {
                 fprintf(stderr,"out of data while decoding adts block\n");
@@ -152,8 +181,15 @@ static int decode_file(const char* infile, const char* outfile) {
         }
         d->frames++;
         if(!DECODEONLY) decoder_write_samples(d);
-    }
-    if(!DECODEONLY) wav_header_finish(d->out, bitdepth);
+
+        if(d->br.pos == d->br.len && d->br.len == 1) {
+            if(fread(d->buf,1,1,d->in) == 1) {
+                d->br.pos = 0;
+                d->br.len = 1;
+            }
+        }
+    } while(d->br.pos < d->br.len);
+    if(!DECODEONLY) wav_header_finish(d->out);
 
     if(DECODEONLY) {
         fprintf(stderr,"decoded %u frames\n", d->frames);
@@ -181,6 +217,10 @@ int main(int argc, const char* argv[]) {
             argv++;
             minargs--;
             DECODEONLY=1;
+        } else if(strcmp(*argv,"-s") == 0) {
+            argc--;
+            argv++;
+            SLURPFILE=1;
         } else if(strcmp(*argv,"--") == 0) {
             argc--;
             argv++;
@@ -191,9 +231,10 @@ int main(int argc, const char* argv[]) {
     }
 
     if( argc < minargs) {
-        fprintf(stderr,"Usage: %s [-n] /path/to/file.aac /path/to/file.wav\n", progname);
+        fprintf(stderr,"Usage: %s [-n] [-s] /path/to/file.aac /path/to/file.wav\n", progname);
         fprintf(stderr,"  Decodes /path/to/file.aac to a wav file, overwrites the destination wav\n");
         fprintf(stderr,"  -n: disable writing audio, only decode\n");
+        fprintf(stderr,"  -s: read the entire aac file into memory\n");
         return 1;
     }
 

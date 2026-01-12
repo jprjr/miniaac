@@ -6,6 +6,8 @@
 /.build/
 /demos/decode-raw
 /demos/decode-adts
+/demos/decode-raw-ll
+/demos/decode-adts-ll
 /scripts/generate-bitreverse-tables
 /scripts/generate-imdct-twiddles
 /scripts/generate-quant-tables

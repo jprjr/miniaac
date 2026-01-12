@@ -198,8 +198,7 @@ maac_adts_raw_sync(maac_adts* maac_restrict a, maac_bitreader* maac_restrict br)
         maac_adts_raw_sync_crc16:
         if( (res = maac_bitreader_fill(br, 16)) != MAAC_OK) return res;
         maac_bitreader_discard(br, 16);
-        a->state = MAAC_ADTS_STATE_RAW_DATA_BLOCK;
-        return MAAC_OK;
+        goto maac_adts_raw_sync_nextrdb;
     }
 
     if(a->state != MAAC_ADTS_STATE_RAW_DATA_BLOCK) {
@@ -216,6 +215,15 @@ maac_adts_raw_sync(maac_adts* maac_restrict a, maac_bitreader* maac_restrict br)
         if(a->variable_header.raw_data_blocks && !(a->fixed_header.protection_absent)) {
             a->state = MAAC_ADTS_STATE_RAW_DATA_BLOCK_CRC16;
             goto maac_adts_raw_sync_crc16;
+        }
+
+        maac_adts_raw_sync_nextrdb:
+        a->_i++;
+        if(a->_i <= a->variable_header.raw_data_blocks) {
+            a->state = MAAC_ADTS_STATE_RAW_DATA_BLOCK;
+        } else {
+            a->state = MAAC_ADTS_STATE_SYNCWORD;
+            a->_i = 0;
         }
     }
 
@@ -247,6 +255,15 @@ maac_adts_raw_decode_cpe(maac_adts* maac_restrict a, maac_bitreader* maac_restri
         return MAAC_OUT_OF_SEQUENCE;
     }
     return maac_raw_decode_cpe(&a->raw, br, left, right);
+}
+
+MAAC_PUBLIC
+MAAC_RESULT
+maac_adts_raw_decode_lfe(maac_adts* maac_restrict a, maac_bitreader* maac_restrict br, maac_channel* maac_restrict c) {
+    if(a->state != MAAC_ADTS_STATE_RAW_DATA_BLOCK) {
+        return MAAC_OUT_OF_SEQUENCE;
+    }
+    return maac_raw_decode_lfe(&a->raw, br, c);
 }
 
 MAAC_PUBLIC

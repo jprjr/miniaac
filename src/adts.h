@@ -151,6 +151,10 @@ MAAC_PUBLIC
 MAAC_RESULT
 maac_adts_raw_decode_cpe(maac_adts* maac_restrict a, maac_bitreader* maac_restrict br, maac_channel* maac_restrict left, maac_channel* maac_restrict right);
 
+/* lower-level API - after a call to maac_adts_raw_sync(), decode a LFE element */
+MAAC_PUBLIC
+MAAC_RESULT
+maac_adts_raw_decode_lfe(maac_adts* maac_restrict a, maac_bitreader* maac_restrict br, maac_channel* maac_restrict  c);
 
 MAAC_CDECLS_END
 

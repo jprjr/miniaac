@@ -74,14 +74,15 @@ enum MAAC_RAW_STATE {
     MAAC_RAW_STATE_BLOCK_ID = 0,
     MAAC_RAW_STATE_FIL      = 1,
     MAAC_RAW_STATE_SCE      = 2,
-    MAAC_RAW_STATE_CPE      = 3
+    MAAC_RAW_STATE_CPE      = 3,
+    MAAC_RAW_STATE_LFE      = 4
 };
 
 typedef enum MAAC_RAW_STATE MAAC_RAW_STATE;
 
 union maac_raw_element {
     maac_fil fil;
-    maac_sce sce;
+    maac_sce sce; /* also used for lfe */
     maac_cpe cpe;
 };
 
@@ -154,6 +155,11 @@ maac_raw_decode_sce(maac_raw* maac_restrict r, maac_bitreader* maac_restrict br,
 MAAC_PUBLIC
 MAAC_RESULT
 maac_raw_decode_cpe(maac_raw* maac_restrict r, maac_bitreader* maac_restrict br, maac_channel* maac_restrict left, maac_channel* maac_restrict right);
+
+/* Returns MAAC_OK after decoding an LFE element */
+MAAC_PUBLIC
+MAAC_RESULT
+maac_raw_decode_lfe(maac_raw* maac_restrict r, maac_bitreader* maac_restrict br, maac_channel* maac_restrict c);
 
 MAAC_CDECLS_END
 

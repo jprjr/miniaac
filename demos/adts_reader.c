@@ -1,12 +1,13 @@
 /* SPDX-License-Identifier: 0BSD */
 #include "adts_reader.h"
 
-int adts_grab_header(FILE* input, adts_header* header) {
+int adts_grab_header(FILE* input, adts_header* header, int fatal) {
     maac_u8 buffer[7]; /* we only read the "main" 7 bytes of header, if there's CRC we discard it */
     maac_u16 audioConfig;
 
     if(fread(buffer,1,7,input) != 7) {
-        fprintf(stderr,"ADTS: unable to read minimum header\n");
+        /* fatal is 1 on the first read - after the first read we don't complain */
+        if(fatal) fprintf(stderr,"ADTS: unable to read minimum header\n");
         return -1;
     }
 

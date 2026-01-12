@@ -364,6 +364,7 @@ maac_cpe_decode(maac_cpe* maac_restrict c, maac_bitreader* maac_restrict br, con
 
         p->l->n_samples = 1024;
         p->l->_n = 0;
+
         p->r->n_samples = 1024;
         p->r->_n = 0;
     }

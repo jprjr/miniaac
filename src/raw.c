@@ -74,7 +74,9 @@ maac_raw_sync(maac_raw* maac_restrict r, maac_bitreader* maac_restrict br) {
                     return  MAAC_CCE_NOT_IMPLEMENTED;
                 }
                 case MAAC_RAW_DATA_BLOCK_ID_LFE: {
-                    return  MAAC_LFE_NOT_IMPLEMENTED;
+                    r->state = MAAC_RAW_STATE_LFE;
+                    maac_sce_init(&r->ele.sce);
+                    break;
                 }
                 case MAAC_RAW_DATA_BLOCK_ID_DSE: {
                     return  MAAC_DSE_NOT_IMPLEMENTED;
@@ -169,6 +171,31 @@ maac_raw_decode_cpe(maac_raw* maac_restrict r, maac_bitreader* maac_restrict br,
 
 MAAC_PUBLIC
 MAAC_RESULT
+maac_raw_decode_lfe(maac_raw* maac_restrict r, maac_bitreader* maac_restrict br, maac_channel* maac_restrict c) {
+    MAAC_RESULT res;
+    maac_sce_decode_params p;
+
+    if(r->state != MAAC_RAW_STATE_LFE) {
+        return MAAC_OUT_OF_SEQUENCE;
+    }
+    if(r->sf_index == 16) {
+        return MAAC_SF_INDEX_NOT_SET;
+    }
+
+    p.sf_index = r->sf_index;
+    p.ch = c;
+    p.rand_state = &r->rand_state;
+
+    if( (res = maac_sce_decode(&r->ele.sce, br, &p)) != MAAC_OK) {
+        return res;
+    }
+
+    r->state = MAAC_RAW_STATE_BLOCK_ID;
+    return MAAC_OK;
+}
+
+MAAC_PUBLIC
+MAAC_RESULT
 maac_raw_decode(maac_raw* maac_restrict r, maac_bitreader* maac_restrict br) {
     MAAC_RESULT res;
     maac_channel* ch1;
@@ -178,14 +205,16 @@ maac_raw_decode(maac_raw* maac_restrict r, maac_bitreader* maac_restrict br) {
         case MAAC_RAW_STATE_BLOCK_ID: {
             maac_raw_state_block_id:
             if( (res = maac_raw_sync(r, br)) != MAAC_OK) return res;
-            r->_c = 0;
             switch(r->state) {
                 case MAAC_RAW_STATE_BLOCK_ID: break;
                 case MAAC_RAW_STATE_SCE: goto maac_raw_state_sce;
                 case MAAC_RAW_STATE_CPE: goto maac_raw_state_cpe;
+                case MAAC_RAW_STATE_LFE: goto maac_raw_state_lfe;
                 case MAAC_RAW_STATE_FIL: goto maac_raw_state_fil;
                 default: MAAC_UNREACHABLE_RETURN(MAAC_UNREACHABLE);
             }
+            /* we break when we read the END element, so reset our output */
+            r->_c = 0;
             return MAAC_OK;
         }
 
@@ -203,6 +232,14 @@ maac_raw_decode(maac_raw* maac_restrict r, maac_bitreader* maac_restrict br) {
             ch2 = r->_c+1 < r->num_out_channels ? &r->out_channels[r->_c+1] : NULL;
             if( (res = maac_raw_decode_cpe(r, br, ch1, ch2)) != MAAC_OK) return res;
             r->_c += 2;
+            goto maac_raw_state_block_id;
+        }
+
+        case MAAC_RAW_STATE_LFE: {
+            maac_raw_state_lfe:
+            ch1 = r->_c < r->num_out_channels ? &r->out_channels[r->_c] : NULL;
+            if( (res = maac_raw_decode_lfe(r, br, ch1)) != MAAC_OK) return res;
+            r->_c++;
             goto maac_raw_state_block_id;
         }
 

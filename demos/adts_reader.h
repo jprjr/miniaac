@@ -33,5 +33,5 @@ struct adts_header {
 
 typedef struct adts_header adts_header;
 
-int adts_grab_header(FILE* input, adts_header* header);
+int adts_grab_header(FILE* input, adts_header* header, int fatal);
 

@@ -105,6 +105,11 @@ MAAC_PUBLIC
 maac_u32
 maac_adts_raw_data_blocks(const maac_adts* a);
 
+maac_pure
+MAAC_PUBLIC
+maac_u32
+maac_adts_raw_ele_id(const maac_adts* a);
+
 /* get the underlying maac_raw object used to decode */
 maac_pure
 MAAC_PUBLIC

@@ -151,6 +151,13 @@ maac_adts_raw_data_blocks(const maac_adts* a) {
     return a->variable_header.raw_data_blocks + 1;
 }
 
+maac_pure
+MAAC_PUBLIC
+maac_u32
+maac_adts_raw_ele_id(const maac_adts* a) {
+    return a->raw.ele_id;
+}
+
 MAAC_PUBLIC
 void
 maac_adts_set_tolerance(maac_adts* a, maac_u32 tolerance) {

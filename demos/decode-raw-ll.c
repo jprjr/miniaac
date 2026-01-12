@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: 0BSD */
 
-/* Example program that decodes with the maac_raw interface,
-using a separate ADTS parser/demuxer. */
+/* example decoder that uses the maac_raw interface
+to interact with individual elements */
 
 #include "maac.h"
 #include "maac_extras.h"
@@ -39,7 +39,7 @@ struct decoder {
     maac_u32 channels;
     maac_channel* ch;
 
-    maac_u8 *buf; /* our data buffer */
+    maac_u8 *buf; /* our input buffer */
     maac_u32 buflen;
     maac_u8 *outbuf; /* our output buffer of packed samples */
 
@@ -47,21 +47,32 @@ struct decoder {
     maac_bitreader br;
     maac_u32 blocks;
     maac_u32 samples;
+    maac_u8 c; /* current channel being output */
+    maac_u32 elements[MAAC_RAW_DATA_BLOCK_ID_END + 1]; /* track counts of each element */
 };
 typedef struct decoder decoder;
 
 static void decoder_init(decoder* d) {
+    unsigned int i  = 0;
+
     d->in = NULL;
     d->out = NULL;
     d->ch = NULL;
     d->buf = NULL;
     d->outbuf = NULL;
+    d->buflen = 0;
     d->channels = 0;
     d->blocks = 0;
     d->samples = 0;
-    d->buflen = 0;
+    d->c = 0;
     maac_raw_init(&d->aac);
     maac_bitreader_init(&d->br);
+
+    d->br.data = d->buf;
+
+    for(i=0;i<=MAAC_RAW_DATA_BLOCK_ID_END;i++) {
+        d->elements[i] = 0;
+    }
 }
 
 static void decoder_close(decoder* d) {
@@ -73,14 +84,118 @@ static void decoder_close(decoder* d) {
 }
 
 static void decoder_write_samples(decoder* d) {
-    if(!DECODEONLY) fwrite(d->outbuf, 1, buffer_samples(d->ch, maac_raw_channel_configuration(&d->aac), d->channels, d->outbuf) , d->out);
+    maac_u32 c_max = d->c > d->channels ? d->channels : d->c;
+
+    fwrite(d->outbuf, 1, buffer_samples(d->ch, maac_raw_channel_configuration(&d->aac), c_max, d->outbuf) , d->out);
+
     d->blocks++;
     d->samples += d->ch[0].n_samples;
+    d->c = 0;
     return;
 }
 
-static int decode_file(const char* infile, const char* outfile) {
+static int decoder_data_reload(decoder* d) {
+    if(fread(d->buf,1,1,d->in) != 1) {
+        fprintf(stderr,"Unexpected end-of-file\n");
+        return 1;
+    }
+    d->br.pos = 0;
+    d->br.len = 1;
+    return 0;
+}
+
+static int decoder_raw_sync(decoder* d) {
     MAAC_RESULT res;
+    int r;
+    while( (res = maac_raw_sync(&d->aac, &d->br)) == MAAC_CONTINUE) {
+        if( (r = decoder_data_reload(d)) ) return r;
+    }
+    if( (r = res != MAAC_OK) ) {
+        fprintf(stderr,"received error while decoding raw data block id: %s\n",
+          maac_result_name(res));
+    }
+    return r;
+}
+
+static int decoder_raw_sce(decoder* d) {
+    MAAC_RESULT res;
+    int r;
+    maac_channel* ch = d->c < d->channels ? &d->ch[d->c] : NULL;
+
+    while( (res = maac_raw_decode_sce(&d->aac, &d->br, ch)) == MAAC_CONTINUE) {
+        if( (r = decoder_data_reload(d)) ) return r;
+    }
+    if( (r = res != MAAC_OK) ) {
+        fprintf(stderr,"received error while decoding single channel element: %s\n",
+          maac_result_name(res));
+    } else {
+        d->c++;
+        d->elements[MAAC_RAW_DATA_BLOCK_ID_SCE]++;
+    }
+    return r;
+}
+
+static int decoder_raw_cpe(decoder* d) {
+    MAAC_RESULT res;
+    int r;
+    maac_channel* left  = ((maac_u32)d->c)   < d->channels ? &d->ch[d->c]   : NULL;
+    maac_channel* right = ((maac_u32)d->c+1) < d->channels ? &d->ch[d->c+1] : NULL;
+
+    while( (res = maac_raw_decode_cpe(&d->aac, &d->br, left, right)) == MAAC_CONTINUE) {
+        if( (r = decoder_data_reload(d)) ) return r;
+    }
+    if( (r = res != MAAC_OK) ) {
+        fprintf(stderr,"received error while decoding channel pair element: %s\n",
+          maac_result_name(res));
+    } else {
+        d->c += 2;
+        d->elements[MAAC_RAW_DATA_BLOCK_ID_CPE]++;
+    }
+    return r;
+}
+
+static int decoder_raw_lfe(decoder* d) {
+    MAAC_RESULT res;
+    int r;
+    maac_channel* ch = d->c < d->channels ? &d->ch[d->c] : NULL;
+
+    while( (res = maac_raw_decode_lfe(&d->aac, &d->br, ch)) == MAAC_CONTINUE) {
+        if( (r = decoder_data_reload(d)) ) return r;
+    }
+    if( (r = res != MAAC_OK) ) {
+        fprintf(stderr,"received error while decoding low frequency element: %s\n",
+          maac_result_name(res));
+    } else {
+        d->c++;
+        d->elements[MAAC_RAW_DATA_BLOCK_ID_LFE]++;
+    }
+    return r;
+}
+
+static int decoder_raw_fil(decoder* d) {
+    MAAC_RESULT res;
+    int r;
+
+    while( (res = maac_raw_decode_fil(&d->aac, &d->br)) == MAAC_CONTINUE) {
+        if( (r = decoder_data_reload(d)) ) return r;
+    }
+    if( (r = res != MAAC_OK) ) {
+        fprintf(stderr,"received error while decoding fill element: %s\n",
+          maac_result_name(res));
+    } else {
+        d->elements[MAAC_RAW_DATA_BLOCK_ID_FIL]++;
+    }
+    return r;
+}
+
+static int decoder_raw_end(decoder* d) {
+    d->elements[MAAC_RAW_DATA_BLOCK_ID_END]++;
+    decoder_write_samples(d);
+    return 0;
+}
+
+static int decode_file(const char* infile, const char* outfile) {
+    unsigned int i = 0;
     int r = 1;
     decoder *d = NULL;
 
@@ -142,9 +257,6 @@ static int decode_file(const char* infile, const char* outfile) {
             fprintf(stderr,"error writing out WAV header\n");
             goto cleanup;
         }
-
-        maac_raw_set_out_channels(&d->aac, d->ch);
-        maac_raw_set_num_out_channels(&d->aac, d->channels);
     }
 
     do {
@@ -169,30 +281,48 @@ static int decode_file(const char* infile, const char* outfile) {
             d->br.len = d->header.frame_length;
         }
 
-        while( (res = maac_raw_decode(&d->aac, &d->br)) == MAAC_CONTINUE) {
-            if(fread(d->buf,1,1,d->in) != 1) {
-                fprintf(stderr,"out of data while decoding raw data block\n");
+        next_element:
+        if(decoder_raw_sync(d)) goto cleanup;
+        switch(maac_raw_ele_id(&d->aac)) {
+            case MAAC_RAW_DATA_BLOCK_ID_SCE: {
+                if(decoder_raw_sce(d)) goto cleanup;
+                goto next_element;
+            }
+            case MAAC_RAW_DATA_BLOCK_ID_CPE: {
+                if(decoder_raw_cpe(d)) goto cleanup;
+                goto next_element;
+            }
+            case MAAC_RAW_DATA_BLOCK_ID_FIL: {
+                if(decoder_raw_fil(d)) goto cleanup;
+                goto next_element;
+            }
+            case MAAC_RAW_DATA_BLOCK_ID_LFE: {
+                if(decoder_raw_lfe(d)) goto cleanup;
+                goto next_element;
+            }
+            case MAAC_RAW_DATA_BLOCK_ID_END: {
+                if(decoder_raw_end(d)) goto cleanup;
+                break;
+            }
+            default: {
+                fprintf(stderr,"Not yet implemented: %s\n", maac_raw_data_block_id_name(maac_raw_ele_id(&d->aac)));
                 goto cleanup;
             }
-            d->br.pos = 0;
-            d->br.len = 1;
         }
-
-        if(res != MAAC_OK) {
-            fprintf(stderr,"received error while decoding raw data block: %s\n",
-              maac_result_name(res));
-            goto cleanup;
-        }
-
-        if(!DECODEONLY) decoder_write_samples(d);
-    } while(adts_grab_header(d->in, &d->header,0) == 0);
+    } while(adts_grab_header(d->in, &d->header, 0) == 0);
 
     if(!DECODEONLY) wav_header_finish(d->out);
 
     if(DECODEONLY) {
         fprintf(stderr,"decoded and wrote %u raw data blocks, %u samples\n", d->blocks, d->samples);
     } else {
-        fprintf(stderr,"decoded and wrote %u raw data blocks, %u samples\n", d->blocks, d->samples);
+        fprintf(stderr,"decoded %u raw data blocks, %u samples\n", d->blocks, d->samples);
+    }
+    fprintf(stderr,"element counts:\n");
+    for(i=0; i<= MAAC_RAW_DATA_BLOCK_ID_END; i++) {
+        fprintf(stderr,"  %s: %u\n",
+          maac_raw_data_block_id_name(i),
+          d->elements[i]);
     }
     r = 0;
 

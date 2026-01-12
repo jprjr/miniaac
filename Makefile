@@ -187,12 +187,18 @@ libmaac_extras.a: $(EXTRAS_OBJS)
 .build:
 	mkdir -p .build
 
-demos: demos/decode-raw demos/decode-adts
+demos: demos/decode-raw demos/decode-raw-ll demos/decode-adts demos/decode-adts-ll
 
-demos/decode-raw: demos/decode-raw.o demos/adts_reader.o demos/wav.o
+demos/decode-raw: demos/decode-raw.o demos/adts_reader.o demos/wav.o demos/buffer_samples.o demos/channel.o
 	$(CC) -o $@ $^ $(LDFLAGS)
 
-demos/decode-adts: demos/decode-adts.o demos/wav.o
+demos/decode-raw-ll: demos/decode-raw-ll.o demos/adts_reader.o demos/wav.o demos/buffer_samples.o demos/channel.o
+	$(CC) -o $@ $^ $(LDFLAGS)
+
+demos/decode-adts: demos/decode-adts.o demos/wav.o demos/buffer_samples.o demos/channel.o
+	$(CC) -o $@ $^ $(LDFLAGS)
+
+demos/decode-adts-ll: demos/decode-adts-ll.o demos/wav.o demos/buffer_samples.o demos/channel.o
 	$(CC) -o $@ $^ $(LDFLAGS)
 
 demos/%.o: demos/%.c dist/maac.h dist/maac_extras.h
@@ -264,5 +270,6 @@ clean:
 	rm -f tests/math-validate tests/math-validate.exe
 	rm -f tests/*.o
 	rm -f demos/decode-raw decode-raw.exe
+	rm -f demos/decode-raw-ll decode-raw-ll.exe
 	rm -f demos/decode-adts decode-adts.exe
 	rm -f demos/*.o
